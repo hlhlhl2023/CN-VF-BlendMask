@@ -41,7 +41,7 @@ def _process_instance_to_semantic(anns, output_semantic, img, categories):
     output = np.zeros(img_size, dtype=np.uint8)
     for ann in anns:
         mask = annToMask(ann, img_size)
-        output[mask == 1] = categories[ann["category_id"]] + 1
+        output[mask == 1] = categories[ann["category_id"]+1]+1
     # save as compressed npz
     np.savez_compressed(output_semantic, mask=output)
     # Image.fromarray(output).save(output_semantic)
@@ -112,13 +112,13 @@ if __name__ == "__main__":
     dataset_dir = os.path.join(os.path.dirname(__file__), args.dataset_name)
     if args.dataset_name == "coco":
         thing_id_to_contiguous_id = _get_coco_instances_meta()["thing_dataset_id_to_contiguous_id"]
-        split_name = 'train2017'
+        split_name = 'train2014'
         annotation_name = "annotations/instances_{}.json"
     else:
         thing_id_to_contiguous_id = {1: 0}
         split_name = 'train'
-        annotation_name = "annotations/{}_person.json"
-    for s in ["train2017"]:
+        annotation_name = "annotations/{}_Building.json"
+    for s in ["train2014"]:
         create_coco_semantic_from_instance(
             os.path.join(dataset_dir, "annotations/instances_{}.json".format(s)),
             os.path.join(dataset_dir, "thing_{}".format(s)),

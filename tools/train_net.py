@@ -43,12 +43,15 @@ from adet.config import get_cfg
 from adet.checkpoint import AdetCheckpointer
 from adet.evaluation import TextEvaluator
 
+from detectron2.engine import DefaultPredictor
+from detectron2.utils.visualizer import ColorMode
 
 class Trainer(DefaultTrainer):
     """
     This is the same Trainer except that we rewrite the
     `build_train_loader`/`resume_or_load` method.
     """
+
     def build_hooks(self):
         """
         Replace `DetectionCheckpointer` with `AdetCheckpointer`.
@@ -67,7 +70,7 @@ class Trainer(DefaultTrainer):
                 )
                 ret[i] = hooks.PeriodicCheckpointer(self.checkpointer, self.cfg.SOLVER.CHECKPOINT_PERIOD)
         return ret
-    
+
     def resume_or_load(self, resume=True):
         checkpoint = self.checkpointer.resume_or_load(self.cfg.MODEL.WEIGHTS, resume=resume)
         if resume and self.checkpointer.has_checkpoint():
@@ -179,13 +182,93 @@ class Trainer(DefaultTrainer):
         return res
 
 
+import cv2
+import random
+from detectron2.utils.visualizer import Visualizer
+from detectron2.data.datasets import register_coco_instances
+from detectron2.data import DatasetCatalog, MetadataCatalog
+
+
 def setup(args):
+
+    CLASS_NAMES =["Building"]
+    register_coco_instances("custom", {}, "datasets/coco/annotations/instances_train2014.json",
+                            "datasets/coco/train2014")
+    custom_metadata = MetadataCatalog.get("custom")
+    custom_metadata.set(thing_classes=CLASS_NAMES,  # 可以选择开启，但是不能显示中文，这里需要注意，中文的话最好关闭
+                                                    evaluator_type='coco', # 指定评估方式
+                                                    json_file="datasets/coco/annotations/instances_train2014.json",
+                                                    image_root="datasets/coco/train2014")
+
+    register_coco_instances("val", {}, "datasets/coco/annotations/instances_val2014.json",
+                            "datasets/coco/val2014")
+    custom_metadata2 = MetadataCatalog.get("val")
+    custom_metadata2.set(thing_classes=CLASS_NAMES,  # 可以选择开启，但是不能显示中文，这里需要注意，中文的话最好关闭
+                        evaluator_type='coco',  # 指定评估方式
+                        json_file="datasets/coco/annotations/instances_val2014.json",
+                        image_root="datasets/coco/val2014")
+
+
+    # dataset_dicts = DatasetCatalog.get("val")
+    # for d in dataset_dicts:
+    #     a=d['file_name']
+    #     print(a[22:])
+    #     if a[22:]=="000000000311.jpg":
+    #       print(d['file_name'])
+    #       img = cv2.imread("file_name")
+    #       visualizer = Visualizer(img[:, :, ::-1], metadata=custom_metadata2, scale=1)
+    #       vis = visualizer.draw_dataset_dict(d)
+    #       cv2.imshow('Sample',vis.get_image()[:, :, ::-1])
+    #       cv2.waitKey()
+    #       break
+
+
+    dataset_dicts = DatasetCatalog.get("custom")
+    for i, d in enumerate(dataset_dicts, 0):
+        print(d)
+        img = cv2.imread(d["file_name"])
+        visualizer = Visualizer(img[:, :, ::-1], metadata=MetadataCatalog.get("custom"), scale=1)
+        vis = visualizer.draw_dataset_dict(d)
+        cv2.imshow('show', vis.get_image()[:, :, ::-1])
+        cv2.waitKey(0)
+        if i == 2:
+            break
+    cv2.destroyWindow("show")
+
     """
     Create configs and perform basic setups.
     """
     cfg = get_cfg()
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
+    cfg.DATASETS.TRAIN = ("custom",)
+    # cfg.DATASETS.TEST = ("val",)
+    cfg.DATASETS.TEST = ("val",)
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = 2
+    # cfg.MODEL.WEIGHTS = 'R_101_3x.pth'
+    cfg.SOLVER.IMS_PER_BATCH = 1
+    # ITERS_IN_ONE_EPOCH = int(3500 / cfg.SOLVER.IMS_PER_BATCH)
+    # cfg.SOLVER.MAX_ITER = (ITERS_IN_ONE_EPOCH * 5)
+    ITERS_IN_ONE_EPOCH = int(1600 / cfg.SOLVER.IMS_PER_BATCH)
+    cfg.SOLVER.MAX_ITER = (ITERS_IN_ONE_EPOCH * 10)
+    # cfg.SOLVER.MAX_ITER = 500
+    # 初始学习率
+    cfg.SOLVER.BASE_LR = 0.001
+    # 优化器动能
+    # cfg.SOLVER.MOMENTUM = 0.9
+    # 权重衰减
+    # cfg.SOLVER.WEIGHT_DECAY = 0.01
+    # cfg.SOLVER.WEIGHT_DECAY_NORM = 0.0
+    # 学习率衰减倍数
+    cfg.SOLVER.GAMMA = 0.1
+    # 迭代到指定次数，学习率进行衰减
+    cfg.SOLVER.STEPS = (8000,12000)
+    # 在训练之前，会做一个热身运动，学习率慢慢增加初始学习率
+    # cfg.SOLVER.WARMUP_FACTOR = 1.0 / 100
+    # 热身迭代次数
+    # cfg.SOLVER.WARMUP_ITERS = 10
+    # cfg.SOLVER.WARMUP_METHOD = "linear"
+
     cfg.freeze()
     default_setup(cfg, args)
 
@@ -203,12 +286,14 @@ def main(args):
         AdetCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
             cfg.MODEL.WEIGHTS, resume=args.resume
         )
-        res = Trainer.test(cfg, model) # d2 defaults.py
+        res = Trainer.test(cfg, model)  # d2 defaults.py
         if comm.is_main_process():
             verify_results(cfg, res)
         if cfg.TEST.AUG.ENABLED:
             res.update(Trainer.test_with_TTA(cfg, model))
         return res
+
+
 
     """
     If you'd like to do anything fancier than the standard training logic,

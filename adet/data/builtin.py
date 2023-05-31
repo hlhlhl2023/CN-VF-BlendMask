@@ -13,7 +13,7 @@ _PREDEFINED_SPLITS_PIC = {
 }
 
 metadata_pic = {
-    "thing_classes": ["person"]
+    "thing_classes": ["Building"]
 }
 
 _PREDEFINED_SPLITS_TEXT = {
